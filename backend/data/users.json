@@ -1,0 +1,79 @@
+[
+  {
+    "id": "ID101",
+    "fullName": "Pawani Imesha",
+    "phone": "0716759086",
+    "email": "pawani24@gmail.com",
+    "date": "2026-03-21",
+    "role": "Staff",
+    "active": true,
+    "createdAt": "2026-03-21T09:00:00.000Z",
+    "updatedAt": "2026-03-21T09:00:00.000Z"
+  },
+  {
+    "id": "ID102",
+    "fullName": "Thanuka Silva",
+    "phone": "0726767016",
+    "email": "thanuka04@gmail.com",
+    "date": "2026-03-22",
+    "role": "Staff",
+    "active": true,
+    "createdAt": "2026-03-22T10:00:00.000Z",
+    "updatedAt": "2026-03-24T08:04:10.828Z"
+  },
+  {
+    "id": "ID200",
+    "fullName": "Nethmi Fernando",
+    "phone": "0771234567",
+    "email": "nethmi.admin@gmail.com",
+    "date": "2026-03-19",
+    "role": "Admin",
+    "active": true,
+    "createdAt": "2026-03-19T11:00:00.000Z",
+    "updatedAt": "2026-03-19T11:00:00.000Z"
+  },
+  {
+    "id": "ID201",
+    "fullName": "Sajith Wickramasinghe",
+    "phone": "0769876543",
+    "email": "sajith.admin@gmail.com",
+    "date": "2026-03-18",
+    "role": "Admin",
+    "active": true,
+    "createdAt": "2026-03-18T12:00:00.000Z",
+    "updatedAt": "2026-03-18T12:00:00.000Z"
+  },
+  {
+    "id": "ID103",
+    "fullName": "snnnnjs",
+    "phone": "655465",
+    "email": "hshsgs@vs",
+    "date": "2026-03-24",
+    "role": "Staff",
+    "active": true,
+    "createdAt": "2026-03-24T02:46:43.936Z",
+    "updatedAt": "2026-03-24T02:46:43.936Z"
+  },
+  {
+    "id": "ID104",
+    "fullName": "bxvggsggsss",
+    "phone": "0987765432",
+    "email": "sgsfafad@ccss",
+    "date": "2026-03-24",
+    "role": "Staff",
+    "active": true,
+    "createdAt": "2026-03-24T03:05:10.752Z",
+    "updatedAt": "2026-03-24T03:05:10.752Z"
+  },
+  {
+    "id": "ID105",
+    "fullName": "gsgshshsha",
+    "phone": "998877755",
+    "email": "gagaf@shshs",
+    "date": "2026-03-24",
+    "role": "Staff",
+    "active": true,
+    "createdAt": "2026-03-24T08:04:38.007Z",
+    "updatedAt": "2026-03-24T08:05:05.099Z"
+  }
+]
