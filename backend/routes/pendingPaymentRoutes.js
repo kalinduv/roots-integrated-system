@@ -4,6 +4,7 @@ const pendingPaymentController = require('../controllers/pendingPaymentControlle
 
 router.get('/', pendingPaymentController.getAllPendingPayments);
 router.post('/', pendingPaymentController.createPendingPayment);
+router.all('/:id/payment-email', pendingPaymentController.sendPendingPaymentEmail);
 router.get('/:id', pendingPaymentController.getPendingPaymentById);
 router.put('/:id', pendingPaymentController.updatePendingPayment);
 router.delete('/:id', pendingPaymentController.deletePendingPayment);

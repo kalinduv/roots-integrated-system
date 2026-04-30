@@ -11,7 +11,7 @@ const normalizePendingPayment = (pendingData) => ({
     ? [pendingData.courseName]
     : [],
   dueAmount: Number(pendingData.dueAmount || 0),
-  dueMonth: pendingData.dueMonth || '',
+  dueDate: pendingData.dueDate || pendingData.dueMonth || '',
   status: pendingData.status || 'Pending',
 });
 

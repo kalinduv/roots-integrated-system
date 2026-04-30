@@ -25,7 +25,7 @@ export default function TeachersStaffPage() {
   const [teacherForm, setTeacherForm] = useState({
     teacherId: '',
     name: '',
-    courses: '',
+    courses: [],
     phone: '',
     email: '',
     date: '',
@@ -33,6 +33,7 @@ export default function TeachersStaffPage() {
 
   const [staffList, setStaffList] = useState([]);
   const [teacherList, setTeacherList] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [staffReportDropdownOpen, setStaffReportDropdownOpen] = useState(false);
   const [teacherReportDropdownOpen, setTeacherReportDropdownOpen] = useState(false);
   const [staffPhoneError, setStaffPhoneError] = useState('');
@@ -41,6 +42,7 @@ export default function TeachersStaffPage() {
   useEffect(() => {
     fetchStaff();
     fetchTeachers();
+    fetchCourses();
   }, []);
 
   const fetchStaff = async () => {
@@ -60,6 +62,16 @@ export default function TeachersStaffPage() {
       setTeacherList(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching teachers:', error);
+    }
+  };
+
+  const fetchCourses = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/courses`);
+      const data = await response.json();
+      setCourses(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
     }
   };
 
@@ -256,7 +268,7 @@ export default function TeachersStaffPage() {
     setTeacherForm({
       teacherId: nextTeacherId,
       name: '',
-      courses: '',
+      courses: [],
       phone: '',
       email: '',
       date: '',
@@ -281,7 +293,7 @@ export default function TeachersStaffPage() {
     setTeacherForm({
       teacherId: item.id || '',
       name: item.name || '',
-      courses: item.courses || '',
+      courses: item.courses ? item.courses.split(',').map(c => c.trim()) : [],
       phone: item.phone || '',
       email: item.email || '',
       date: item.date || '',
@@ -357,6 +369,11 @@ export default function TeachersStaffPage() {
     }
   };
 
+  const handleCoursesChange = (e) => {
+    const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+    setTeacherForm((prev) => ({ ...prev, courses: selectedOptions }));
+  };
+
   const closeStaffModal = () => {
     setIsStaffModalOpen(false);
     setEditingStaffId(null);
@@ -377,7 +394,7 @@ export default function TeachersStaffPage() {
     setTeacherForm({
       teacherId: '',
       name: '',
-      courses: '',
+      courses: [],
       phone: '',
       email: '',
       date: '',
@@ -446,7 +463,7 @@ export default function TeachersStaffPage() {
     const payload = {
       id: teacherForm.teacherId,
       name: teacherForm.name,
-      courses: teacherForm.courses,
+      courses: teacherForm.courses.join(', '),
       phone: teacherForm.phone,
       email: teacherForm.email,
       date: teacherForm.date,
@@ -753,7 +770,7 @@ export default function TeachersStaffPage() {
 
       {isStaffModalOpen && (
         <div className="fixed inset-0 bg-[#4B1D63]/35 backdrop-blur-[1px] flex items-center justify-center z-50">
-          <div className="bg-[#f5f3f2] rounded-[32px] p-8 w-full max-w-2xl shadow-xl">
+          <div className="bg-[#f5f3f2] rounded-[32px] p-8 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-4xl font-bold text-black text-center mb-10">
               {editingStaffId ? 'Update Staff' : 'Add New Staff'}
             </h2>
@@ -810,7 +827,7 @@ export default function TeachersStaffPage() {
 
       {isTeacherModalOpen && (
         <div className="fixed inset-0 bg-[#4B1D63]/35 backdrop-blur-[1px] flex items-center justify-center z-50">
-          <div className="bg-[#f5f3f2] rounded-[32px] p-8 w-full max-w-2xl shadow-xl">
+          <div className="bg-[#f5f3f2] rounded-[32px] p-8 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-4xl font-bold text-black text-center mb-10">
               {editingTeacherId ? 'Update Teacher' : 'Add New Teacher'}
             </h2>
@@ -829,7 +846,21 @@ export default function TeachersStaffPage() {
 
                 <div>
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Enrolled Courses</label>
-                  <input required type="text" name="courses" value={teacherForm.courses} onChange={handleTeacherFormChange} className="w-full h-14 px-5 rounded-full border border-gray-400 bg-white focus:outline-none" />
+                  <select
+                    multiple
+                    required
+                    name="courses"
+                    value={teacherForm.courses}
+                    onChange={handleCoursesChange}
+                    className="w-full h-32 px-5 py-3 rounded-2xl border border-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {courses.map((course) => (
+                      <option key={course.docId} value={course.name}>
+                        {course.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-sm text-gray-500 mt-1">Hold Ctrl (or Cmd) to select multiple courses</p>
                 </div>
 
                 <div>

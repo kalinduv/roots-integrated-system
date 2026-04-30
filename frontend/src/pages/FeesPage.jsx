@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE } from '../config';
 import { logActivity } from '../utils/activityLogger';
 import { jsPDF } from 'jspdf';
@@ -19,6 +19,10 @@ export default function FeesPage() {
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [studentSuggestionsOpen, setStudentSuggestionsOpen] = useState(false);
+  const [pendingStudentSuggestionsOpen, setPendingStudentSuggestionsOpen] = useState(false);
+  const studentIdInputRef = useRef(null);
+  const pendingStudentIdInputRef = useRef(null);
 
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [editingPendingId, setEditingPendingId] = useState(null);
@@ -34,18 +38,36 @@ export default function FeesPage() {
     amountPaid: '',
     date: '',
   });
+  const [receiptError, setReceiptError] = useState('');
+  const [validationError, setValidationError] = useState('');
 
   const [pendingForm, setPendingForm] = useState({
     studentId: '',
     studentName: '',
     courseNames: [],
     dueAmount: '',
-    dueMonth: '',
+    dueDate: '',
   });
 
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  // Function to generate the next receipt ID
+  const generateNextReceiptId = (existingPayments) => {
+    // Find all receipt IDs that start with 'RP' followed by digits
+    const receiptIds = existingPayments
+      .map(payment => payment.receiptNo)
+      .filter(id => id && /^RP\d+$/.test(id))
+      .map(id => parseInt(id.substring(2)))
+      .filter(num => !isNaN(num));
+
+    // Find the maximum number, or start from 99 if none exist
+    const maxNum = receiptIds.length > 0 ? Math.max(...receiptIds) : 99;
+    
+    // Return the next ID
+    return `RP${maxNum + 1}`;
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -53,6 +75,12 @@ export default function FeesPage() {
       if (!e.target.closest('#payment-report-dropdown') && !e.target.closest('#pending-report-dropdown')) {
         setPaymentReportDropdownOpen(false);
         setPendingReportDropdownOpen(false);
+      }
+      if (studentIdInputRef.current && !studentIdInputRef.current.contains(e.target)) {
+        setStudentSuggestionsOpen(false);
+      }
+      if (pendingStudentIdInputRef.current && !pendingStudentIdInputRef.current.contains(e.target)) {
+        setPendingStudentSuggestionsOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -122,21 +150,141 @@ export default function FeesPage() {
     return [...new Set(names)];
   }, [courses]);
 
+  const studentIdSuggestions = useMemo(() => {
+    const query = (paymentForm.studentId || '').trim().toLowerCase();
+    if (!query) return [];
+
+    return students
+      .filter((student) => {
+        const idText = String(student.id || student.studentId || '').toLowerCase();
+        const nameText = String(student.name || '').toLowerCase();
+        return idText.includes(query) || nameText.includes(query);
+      })
+      .map((student) => ({
+        id: student.id || student.studentId || '',
+        name: student.name || '',
+      }));
+  }, [paymentForm.studentId, students]);
+
+  const pendingStudentIdSuggestions = useMemo(() => {
+    const query = (pendingForm.studentId || '').trim().toLowerCase();
+    if (!query) return [];
+
+    return students
+      .filter((student) => {
+        const idText = String(student.id || student.studentId || '').toLowerCase();
+        const nameText = String(student.name || '').toLowerCase();
+        return idText.includes(query) || nameText.includes(query);
+      })
+      .map((student) => ({
+        id: student.id || student.studentId || '',
+        name: student.name || '',
+      }));
+  }, [pendingForm.studentId, students]);
+
   const getMatchedStudentName = (studentId) => {
     const match = students.find(
       (student) =>
-        String(student.id || '').trim().toLowerCase() ===
+        String(student.id || student.studentId || '').trim().toLowerCase() ===
         String(studentId || '').trim().toLowerCase()
     );
     return match ? match.name || '' : '';
   };
+
+  const getStudentById = (studentId) => {
+    return students.find(
+      (student) =>
+        String(student.id || student.studentId || '').trim().toLowerCase() ===
+        String(studentId || '').trim().toLowerCase()
+    );
+  };
+
+  const parseCourseDetails = (courseDetails) => {
+    if (!courseDetails) return [];
+    if (Array.isArray(courseDetails)) {
+      return courseDetails.map(String).map((item) => item.trim()).filter(Boolean);
+    }
+    return String(courseDetails)
+      .split(/[,;|]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const getRelevantCourseOptions = useMemo(() => {
+    const student = getStudentById(paymentForm.studentId);
+    if (!student) return courseOptions;
+
+    const studentCourseNames = parseCourseDetails(student.courseDetails);
+    if (studentCourseNames.length === 0) return courseOptions;
+
+    const normalizedNames = studentCourseNames.map((name) => name.toLowerCase());
+    const matchedOptions = courseOptions.filter((option) =>
+      normalizedNames.some(
+        (courseName) =>
+          option.toLowerCase().includes(courseName) ||
+          courseName.includes(option.toLowerCase())
+      )
+    );
+
+    return matchedOptions.length > 0 ? matchedOptions : courseOptions;
+  }, [paymentForm.studentId, students, courseOptions]);
+
+  const getPendingRelevantCourseOptions = useMemo(() => {
+    const student = getStudentById(pendingForm.studentId);
+    if (!student) return courseOptions;
+
+    const studentCourseNames = parseCourseDetails(student.courseDetails);
+    if (studentCourseNames.length === 0) return courseOptions;
+
+    const normalizedNames = studentCourseNames.map((name) => name.toLowerCase());
+    const matchedOptions = courseOptions.filter((option) =>
+      normalizedNames.some(
+        (courseName) =>
+          option.toLowerCase().includes(courseName) ||
+          courseName.includes(option.toLowerCase())
+      )
+    );
+
+    return matchedOptions.length > 0 ? matchedOptions : courseOptions;
+  }, [pendingForm.studentId, students, courseOptions]);
 
   const handlePaymentStudentIdChange = (value) => {
     setPaymentForm((prev) => ({
       ...prev,
       studentId: value,
       studentName: getMatchedStudentName(value),
+      courseNames: [],
     }));
+    setReceiptError('');
+    setStudentSuggestionsOpen(true);
+  };
+
+  const handleSelectStudentSuggestion = (student) => {
+    setPaymentForm((prev) => ({
+      ...prev,
+      studentId: student.id,
+      studentName: student.name,
+      courseNames: [],
+    }));
+    setStudentSuggestionsOpen(false);
+  };
+
+  const handleSelectPendingStudentSuggestion = (student) => {
+    setPendingForm((prev) => ({
+      ...prev,
+      studentId: student.id,
+      studentName: student.name,
+      courseNames: [],
+    }));
+    setPendingStudentSuggestionsOpen(false);
+  };
+
+  const isReceiptTaken = (receipt) => {
+    if (!receipt || !receipt.trim()) return false;
+    return payments.some((payment) =>
+      String(payment.receiptNo || '').trim().toLowerCase() === receipt.trim().toLowerCase() &&
+      payment.id !== editingPaymentId
+    );
   };
 
   const handlePendingStudentIdChange = (value) => {
@@ -145,6 +293,7 @@ export default function FeesPage() {
       studentId: value,
       studentName: getMatchedStudentName(value),
     }));
+    setPendingStudentSuggestionsOpen(true);
   };
 
   const handleMultiSelect = (e, formType) => {
@@ -175,6 +324,9 @@ export default function FeesPage() {
       amountPaid: '',
       date: '',
     });
+    setReceiptError('');
+    setValidationError('');
+    setStudentSuggestionsOpen(false);
     setEditingPaymentId(null);
   };
 
@@ -184,8 +336,10 @@ export default function FeesPage() {
       studentName: '',
       courseNames: [],
       dueAmount: '',
-      dueMonth: '',
+      dueDate: '',
     });
+    setValidationError('');
+    setPendingStudentSuggestionsOpen(false);
     setEditingPendingId(null);
   };
 
@@ -212,6 +366,69 @@ export default function FeesPage() {
   const formatCourseNames = (courseNames) => {
     if (Array.isArray(courseNames)) return courseNames.join(', ');
     return courseNames || '';
+  };
+
+  const monthOptions = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  const monthNameToNumber = (monthName) => {
+    const index = monthOptions.findIndex(
+      (month) => month.toLowerCase() === monthName.toLowerCase()
+    );
+    return index !== -1 ? String(index + 1).padStart(2, '0') : '';
+  };
+
+  const parseMonthDateValue = (value) => {
+    if (!value) return { year: '', month: '' };
+    const trimmed = String(value).trim();
+
+    const fullDateMatch = trimmed.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+    if (fullDateMatch) {
+      return { year: fullDateMatch[1], month: fullDateMatch[2] };
+    }
+
+    const yearMonthNameMatch = trimmed.match(/^(\d{4})-(.+)$/);
+    if (yearMonthNameMatch) {
+      const month = monthNameToNumber(yearMonthNameMatch[2]);
+      if (month) return { year: yearMonthNameMatch[1], month };
+    }
+
+    const monthYearMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{4})$/);
+    if (monthYearMatch) {
+      const month = monthNameToNumber(monthYearMatch[1]);
+      if (month) return { year: monthYearMatch[2], month };
+    }
+
+    const monthOnly = monthNameToNumber(trimmed);
+    if (monthOnly) {
+      return { year: String(new Date().getFullYear()), month: monthOnly };
+    }
+
+    return { year: '', month: '' };
+  };
+
+  const normalizeMonthDate = (value) => {
+    const { year, month } = parseMonthDateValue(value);
+    return year && month ? `${year}-${month}-01` : '';
+  };
+
+  const formatPaymentDate = (dateValue) => {
+    if (!dateValue) return '';
+    const { year, month } = parseMonthDateValue(dateValue);
+    if (!year || !month) return String(dateValue);
+    return `${monthOptions[Number(month) - 1]} ${year}`;
   };
 
   const handleExportPaymentsPDF = () => {
@@ -252,7 +469,7 @@ export default function FeesPage() {
 
   const handleExportPendingPDF = () => {
     const doc = new jsPDF();
-    const tableColumn = ["Student ID", "Student Name", "Course Name", "Due Amount", "Due Month"];
+    const tableColumn = ["Student ID", "Student Name", "Course Name", "Due Amount", "Date"];
     const tableRows = [];
     filteredPendingPayments.forEach(pending => {
       tableRows.push([
@@ -260,7 +477,7 @@ export default function FeesPage() {
         pending.studentName || '',
         formatCourseNames(pending.courseNames),
         pending.dueAmount || '',
-        pending.dueMonth || '',
+        formatPaymentDate(pending.dueDate || pending.dueMonth) || '',
       ]);
     });
     autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
@@ -275,7 +492,7 @@ export default function FeesPage() {
       "Student Name": pending.studentName || '',
       "Course Name": formatCourseNames(pending.courseNames),
       "Due Amount": pending.dueAmount || '',
-      "Due Month": pending.dueMonth || '',
+      "Date": formatPaymentDate(pending.dueDate || pending.dueMonth) || '',
     }));
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
@@ -375,8 +592,29 @@ export default function FeesPage() {
   const handleSavePayment = async (e) => {
     e.preventDefault();
 
+    // Validation: Check if all required fields are filled
+    if (!paymentForm.studentId.trim() || 
+        !paymentForm.studentName.trim() || paymentForm.courseNames.length === 0 || 
+        !paymentForm.amountPaid.trim() || !paymentForm.date.trim()) {
+      setValidationError('Please fill all the fields');
+      return;
+    }
+
+    setValidationError('');
+
+    // Generate receipt ID automatically for new payments
+    let receiptId = paymentForm.receiptNo;
+    if (!editingPaymentId) {
+      receiptId = generateNextReceiptId(payments);
+    }
+
+    if (isReceiptTaken(receiptId)) {
+      setReceiptError('This Receipt Number already taken');
+      return;
+    }
+
     const payload = {
-      receiptNo: paymentForm.receiptNo,
+      receiptNo: receiptId,
       studentId: paymentForm.studentId,
       studentName: paymentForm.studentName,
       courseNames: paymentForm.courseNames,
@@ -420,12 +658,22 @@ export default function FeesPage() {
   const handleSavePending = async (e) => {
     e.preventDefault();
 
+    // Validation: Check if all required fields are filled
+    if (!pendingForm.studentId.trim() || !pendingForm.studentName.trim() || 
+        pendingForm.courseNames.length === 0 || !pendingForm.dueAmount.trim() || 
+        !pendingForm.dueDate.trim()) {
+      setValidationError('Please fill all the fields');
+      return;
+    }
+
+    setValidationError('');
+
     const payload = {
       studentId: pendingForm.studentId,
       studentName: pendingForm.studentName,
       courseNames: pendingForm.courseNames,
       dueAmount: pendingForm.dueAmount,
-      dueMonth: pendingForm.dueMonth,
+      dueDate: pendingForm.dueDate,
     };
 
     try {
@@ -467,7 +715,7 @@ export default function FeesPage() {
         ? [item.courseName]
         : [],
       amountPaid: item.amountPaid || item.amount || '',
-      date: item.date || '',
+      date: normalizeMonthDate(item.date || ''),
     });
     setIsPaymentModalOpen(true);
   };
@@ -483,7 +731,7 @@ export default function FeesPage() {
         ? [item.courseName]
         : [],
       dueAmount: item.dueAmount || '',
-      dueMonth: item.dueMonth || '',
+      dueDate: normalizeMonthDate(item.dueDate || item.dueMonth || ''),
     });
     setIsPendingModalOpen(true);
   };
@@ -502,6 +750,48 @@ export default function FeesPage() {
       }
     } catch (error) {
       console.error('Error deleting payment:', error);
+    }
+  };
+
+  const handleSendPaymentEmail = async (paymentId, studentName) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/payments/${paymentId}/payment-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        alert(`Success! Payment confirmation email sent to ${studentName}`);
+        logActivity(`Payment confirmation email successfully sent to ${studentName}.`);
+      } else {
+        console.error('Email send failed:', data);
+        alert(`Failed to send email: ${data.error || 'Unknown error occurred'}`);
+      }
+    } catch (error) {
+      console.error('Network error:', error);
+      alert(`Network Error: ${error.message}`);
+    }
+  };
+
+  const handleSendPendingPaymentEmail = async (pendingPaymentId, studentName) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/pending-payments/${pendingPaymentId}/payment-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        alert(`Success! Payment reminder email sent to ${studentName}`);
+        logActivity(`Payment reminder email successfully sent to ${studentName}.`);
+      } else {
+        console.error('Email send failed:', data);
+        alert(`Failed to send email: ${data.error || 'Unknown error occurred'}`);
+      }
+    } catch (error) {
+      console.error('Network error:', error);
+      alert(`Network Error: ${error.message}`);
     }
   };
 
@@ -537,7 +827,10 @@ export default function FeesPage() {
         itemCourses.toLowerCase().includes(q);
 
       // Month filter (check date)
-      const matchesMonth = !monthFilter || (item.date && item.date.includes(monthFilter));
+      const matchesMonth = !monthFilter || (() => {
+        const month = parseMonthDateValue(item.date).month;
+        return month === monthFilter;
+      })();
 
       // Course filter
       const matchesCourse = !courseFilter || itemCourses.toLowerCase().includes(courseFilter.toLowerCase());
@@ -559,8 +852,12 @@ export default function FeesPage() {
         String(item.studentId || '').toLowerCase().includes(q) ||
         itemCourses.toLowerCase().includes(q);
 
-      // Month filter (check dueMonth)
-      const matchesMonth = !monthFilter || (item.dueMonth && item.dueMonth.toLowerCase().includes(monthFilter.toLowerCase()));
+      // Month filter (check dueDate or dueMonth)
+      const matchesMonth = !monthFilter || (() => {
+        const dateValue = item.dueDate || item.dueMonth;
+        const month = parseMonthDateValue(dateValue).month;
+        return month === monthFilter;
+      })();
 
       // Course filter
       const matchesCourse = !courseFilter || itemCourses.toLowerCase().includes(courseFilter.toLowerCase());
@@ -695,7 +992,7 @@ export default function FeesPage() {
                 <th className="px-6 py-4">Student Name</th>
                 <th className="px-6 py-4">Course Name</th>
                 <th className="px-6 py-4">Amount Paid</th>
-                <th className="px-6 py-4">Month</th>
+                <th className="px-6 py-4">Date</th>
                 <th className="px-6 py-4">Action</th>
               </tr>
             </thead>
@@ -712,16 +1009,21 @@ export default function FeesPage() {
                       : item.courseName || ''}
                   </td>
                   <td className="px-6 py-4">{item.amountPaid || item.amount}</td>
-                  <td className="px-6 py-4">{item.date || '-'}</td>
+                  <td className="px-6 py-4">{formatPaymentDate(item.date) || '-'}</td>
                   <td className="px-6 py-4 text-gray-500">
                     <button onClick={() => handleEditPayment(item)} className="mr-3 hover:text-gray-700">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
-                    <button onClick={() => handleDeletePayment(item.id, item.studentName)} className="hover:text-red-500">
+                    <button onClick={() => handleDeletePayment(item.id, item.studentName)} className="mr-3 hover:text-red-500">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                    <button onClick={() => handleSendPaymentEmail(item.id, item.studentName)} className="hover:text-blue-500">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                     </button>
                   </td>
@@ -781,7 +1083,7 @@ export default function FeesPage() {
                 <th className="px-6 py-4">Student Name</th>
                 <th className="px-6 py-4">Course Name</th>
                 <th className="px-6 py-4">Due Amount</th>
-                <th className="px-6 py-4">Due Month</th>
+                <th className="px-6 py-4">Date</th>
                 <th className="px-6 py-4">Action</th>
               </tr>
             </thead>
@@ -797,16 +1099,21 @@ export default function FeesPage() {
                       : item.courseName || ''}
                   </td>
                   <td className="px-6 py-4">{item.dueAmount}</td>
-                  <td className="px-6 py-4">{item.dueMonth}</td>
+                  <td className="px-6 py-4">{formatPaymentDate(item.dueDate || item.dueMonth)}</td>
                   <td className="px-6 py-4 text-gray-500">
                     <button onClick={() => handleEditPending(item)} className="mr-3 hover:text-gray-700">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
-                    <button onClick={() => handleDeletePending(item.id, item.studentName)} className="hover:text-red-500">
+                    <button onClick={() => handleDeletePending(item.id, item.studentName)} className="mr-3 hover:text-red-500">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                    <button onClick={() => handleSendPendingPaymentEmail(item.id, item.studentName)} className="hover:text-blue-500">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                     </button>
                   </td>
@@ -840,24 +1147,74 @@ export default function FeesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 <div>
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Receipt No</label>
-                  <input
-                    required
-                    type="text"
-                    value={paymentForm.receiptNo}
-                    onChange={(e) => setPaymentForm((prev) => ({ ...prev, receiptNo: e.target.value }))}
-                    className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
-                  />
+                  {editingPaymentId ? (
+                    // Editing mode: show receipt ID as read-only
+                    <input
+                      required
+                      type="text"
+                      value={paymentForm.receiptNo}
+                      className="w-full h-14 px-5 rounded-full border border-gray-300 bg-gray-100 text-gray-700 cursor-not-allowed"
+                      readOnly
+                    />
+                  ) : (
+                    // Adding mode: hide receipt ID field since it's auto-generated
+                    <div className="w-full h-14 px-5 rounded-full border border-gray-300 bg-gray-50 text-gray-500 italic flex items-center">
+                      Auto-generated (RP100, RP101, etc.)
+                    </div>
+                  )}
+                  {receiptError && (
+                    <p className="text-xs text-red-600 mt-2">{receiptError}</p>
+                  )}
                 </div>
 
-                <div>
+                <div ref={studentIdInputRef} className="relative">
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Student ID</label>
                   <input
                     required
                     type="text"
                     value={paymentForm.studentId}
                     onChange={(e) => handlePaymentStudentIdChange(e.target.value)}
+                    onFocus={() => setStudentSuggestionsOpen(true)}
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
+                    autoComplete="off"
                   />
+                  {studentSuggestionsOpen && paymentForm.studentId.trim().length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl">
+                      {studentIdSuggestions.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">No students found</div>
+                      ) : (
+                        studentIdSuggestions.map((student) => (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onMouseDown={() => handleSelectStudentSuggestion(student)}
+                            className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="font-semibold">{student.id}</span>
+                            <span className="text-gray-500 ml-2">{student.name}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-2 rounded-2xl border border-[#FDE68A] bg-[#FEF9C3] px-4 py-3 text-sm text-[#92400E] shadow-sm">
+                    {paymentForm.studentId ? (
+                      getStudentById(paymentForm.studentId) ? (
+                        getRelevantCourseOptions.length > 0 ? (
+                          <>
+                            <span className="font-semibold">Available courses:</span>{' '}
+                            {getRelevantCourseOptions.join(', ')}
+                          </>
+                        ) : (
+                          'No relevant course list was found for this student. Showing all available courses.'
+                        )
+                      ) : (
+                        'Student ID not found. Enter a valid student ID to see available courses.'
+                      )
+                    ) : (
+                      '⚠️ Enter a student ID first to see available courses'
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -879,7 +1236,7 @@ export default function FeesPage() {
                     onChange={(e) => handleMultiSelect(e, 'payment')}
                     className="w-full min-h-[130px] px-4 py-3 rounded-3xl border border-gray-300 bg-white focus:outline-none"
                   >
-                    {courseOptions.map((courseName, index) => (
+                    {getRelevantCourseOptions.map((courseName, index) => (
                       <option key={index} value={courseName}>
                         {courseName}
                       </option>
@@ -892,7 +1249,9 @@ export default function FeesPage() {
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Amount Paid</label>
                   <input
                     required
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={paymentForm.amountPaid}
                     onChange={(e) => setPaymentForm((prev) => ({ ...prev, amountPaid: e.target.value }))}
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
@@ -900,7 +1259,7 @@ export default function FeesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[15px] font-semibold text-gray-900 mb-3">Month</label>
+                  <label className="block text-[15px] font-semibold text-gray-900 mb-3">Date</label>
                   <select
                     required
                     value={paymentForm.date}
@@ -908,21 +1267,24 @@ export default function FeesPage() {
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
                   >
                     <option value="">Select a month</option>
-                    <option value="January">January</option>
-                    <option value="February">February</option>
-                    <option value="March">March</option>
-                    <option value="April">April</option>
-                    <option value="May">May</option>
-                    <option value="June">June</option>
-                    <option value="July">July</option>
-                    <option value="August">August</option>
-                    <option value="September">September</option>
-                    <option value="October">October</option>
-                    <option value="November">November</option>
-                    <option value="December">December</option>
+                    {monthOptions.map((month, index) => {
+                      const monthNum = (index + 1).toString().padStart(2, '0');
+                      const year = new Date().getFullYear();
+                      return (
+                        <option key={month} value={`${year}-${monthNum}-01`}>
+                          {month} {year}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
+
+              {validationError && (
+                <div className="mt-4 p-3 rounded-lg bg-red-100 border border-red-400 text-red-700 text-center">
+                  {validationError}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10">
                 <button
@@ -962,15 +1324,54 @@ export default function FeesPage() {
 
             <form onSubmit={handleSavePending}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                <div>
+                <div ref={pendingStudentIdInputRef} className="relative">
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Student ID</label>
                   <input
                     required
                     type="text"
                     value={pendingForm.studentId}
                     onChange={(e) => handlePendingStudentIdChange(e.target.value)}
+                    onFocus={() => setPendingStudentSuggestionsOpen(true)}
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
+                    autoComplete="off"
                   />
+                  {pendingStudentSuggestionsOpen && pendingForm.studentId.trim().length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl">
+                      {pendingStudentIdSuggestions.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">No students found</div>
+                      ) : (
+                        pendingStudentIdSuggestions.map((student) => (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onMouseDown={() => handleSelectPendingStudentSuggestion(student)}
+                            className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="font-semibold">{student.id}</span>
+                            <span className="text-gray-500 ml-2">{student.name}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-2 rounded-2xl border border-[#FDE68A] bg-[#FEF9C3] px-4 py-3 text-sm text-[#92400E] shadow-sm">
+                    {pendingForm.studentId ? (
+                      getStudentById(pendingForm.studentId) ? (
+                        getPendingRelevantCourseOptions.length > 0 ? (
+                          <>
+                            <span className="font-semibold">Available courses:</span>{' '}
+                            {getPendingRelevantCourseOptions.join(', ')}
+                          </>
+                        ) : (
+                          'No relevant course list was found for this student. Showing all available courses.'
+                        )
+                      ) : (
+                        'Student ID not found. Enter a valid student ID to see available courses.'
+                      )
+                    ) : (
+                      '⚠️ Enter a student ID first to see available courses'
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -992,7 +1393,7 @@ export default function FeesPage() {
                     onChange={(e) => handleMultiSelect(e, 'pending')}
                     className="w-full min-h-[130px] px-4 py-3 rounded-3xl border border-gray-300 bg-white focus:outline-none"
                   >
-                    {courseOptions.map((courseName, index) => (
+                    {getPendingRelevantCourseOptions.map((courseName, index) => (
                       <option key={index} value={courseName}>
                         {courseName}
                       </option>
@@ -1005,7 +1406,9 @@ export default function FeesPage() {
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">Due Amount</label>
                   <input
                     required
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={pendingForm.dueAmount}
                     onChange={(e) => setPendingForm((prev) => ({ ...prev, dueAmount: e.target.value }))}
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
@@ -1013,29 +1416,32 @@ export default function FeesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[15px] font-semibold text-gray-900 mb-3">Due Month</label>
+                  <label className="block text-[15px] font-semibold text-gray-900 mb-3">Date</label>
                   <select
                     required
-                    value={pendingForm.dueMonth}
-                    onChange={(e) => setPendingForm((prev) => ({ ...prev, dueMonth: e.target.value }))}
+                    value={pendingForm.dueDate}
+                    onChange={(e) => setPendingForm((prev) => ({ ...prev, dueDate: e.target.value }))}
                     className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
                   >
                     <option value="">Select a month</option>
-                    <option value="January">January</option>
-                    <option value="February">February</option>
-                    <option value="March">March</option>
-                    <option value="April">April</option>
-                    <option value="May">May</option>
-                    <option value="June">June</option>
-                    <option value="July">July</option>
-                    <option value="August">August</option>
-                    <option value="September">September</option>
-                    <option value="October">October</option>
-                    <option value="November">November</option>
-                    <option value="December">December</option>
+                    {monthOptions.map((month, index) => {
+                      const monthNum = String(index + 1).padStart(2, '0');
+                      const year = new Date().getFullYear();
+                      return (
+                        <option key={month} value={`${year}-${monthNum}-01`}>
+                          {month} {year}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
+
+              {validationError && (
+                <div className="mt-4 p-3 rounded-lg bg-red-100 border border-red-400 text-red-700 text-center">
+                  {validationError}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10">
                 <button

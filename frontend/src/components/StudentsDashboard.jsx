@@ -313,7 +313,8 @@ const StudentsDashboard = () => {
         logActivity(`Welcome email successfully sent to ${studentName}.`);
       } else {
         const errorData = await response.json().catch(() => ({}));
-        alert(`Failed to send email: ${errorData.error || 'Check Gmail settings'}`);
+        console.error('Email send failed:', errorData);
+        alert(`Failed to send email: ${errorData.error || 'Unknown error occurred'}`);
       }
     } catch (error) {
       alert(`Network Error: ${error.message}`);

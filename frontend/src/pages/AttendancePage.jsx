@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { API_BASE } from '../config';
 import { logActivity } from '../utils/activityLogger';
+import * as XLSX from 'xlsx';
 
 export default function AttendancePage() {
   const [attendanceList, setAttendanceList] = useState([]);
@@ -10,6 +11,8 @@ export default function AttendancePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // Format: YYYY-MM
+  const [studentSuggestionsOpen, setStudentSuggestionsOpen] = useState(false);
+  const studentIdInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
     studentId: '',
@@ -29,6 +32,17 @@ export default function AttendancePage() {
     fetchAttendance();
     fetchStudents();
     fetchCourses();
+  }, []);
+
+  // Close student suggestions when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (studentIdInputRef.current && !studentIdInputRef.current.contains(e.target)) {
+        setStudentSuggestionsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   const fetchAttendance = async () => {
@@ -173,6 +187,23 @@ export default function AttendancePage() {
     });
   }, [attendanceList, searchTerm]);
 
+  // Student ID suggestions for attendance form
+  const studentIdSuggestions = useMemo(() => {
+    const query = (formData.studentId || '').trim().toLowerCase();
+    if (!query) return [];
+
+    return students
+      .filter((student) => {
+        const idText = String(student.id || student.studentId || '').toLowerCase();
+        const nameText = String(student.name || '').toLowerCase();
+        return idText.includes(query) || nameText.includes(query);
+      })
+      .map((student) => ({
+        id: student.id || student.studentId || '',
+        name: student.name || '',
+      }));
+  }, [formData.studentId, students]);
+
   const resetForm = () => {
     setFormData({
       studentId: '',
@@ -182,6 +213,7 @@ export default function AttendancePage() {
       time: getCurrentTime(),
       status: 'Present',
     });
+    setStudentSuggestionsOpen(false);
     setEditingId(null);
   };
 
@@ -195,8 +227,7 @@ export default function AttendancePage() {
     setIsModalOpen(false);
   };
 
-  const handleStudentIdChange = (e) => {
-    const value = e.target.value;
+  const handleStudentIdChange = (value) => {
     const matchedStudent = students.find(
       (student) => String(student.id).toLowerCase() === value.trim().toLowerCase()
     );
@@ -206,13 +237,23 @@ export default function AttendancePage() {
       studentId: value,
       studentName: matchedStudent ? matchedStudent.name || '' : '',
     }));
+    setStudentSuggestionsOpen(true);
+  };
+
+  const handleSelectStudentSuggestion = (student) => {
+    setFormData((prev) => ({
+      ...prev,
+      studentId: student.id,
+      studentName: student.name,
+    }));
+    setStudentSuggestionsOpen(false);
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
 
     if (name === 'studentId') {
-      handleStudentIdChange(e);
+      handleStudentIdChange(value);
       return;
     }
 
@@ -354,8 +395,11 @@ export default function AttendancePage() {
           <button
             type="button"
             onClick={downloadDailyReport}
-            className="bg-[#4B1D63] hover:bg-[#3f174f] text-white px-6 py-3 rounded-full font-medium transition-colors shadow-sm"
+            className="bg-[#B19CD9] hover:bg-[#A38ACF] text-white px-4 py-2.5 rounded-full font-medium shadow-sm flex items-center gap-2 text-sm transition-colors"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
             Generate Daily Report
           </button>
 
@@ -575,7 +619,7 @@ export default function AttendancePage() {
 
             <form onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                <div>
+                <div ref={studentIdInputRef} className="relative">
                   <label className="block text-[15px] font-semibold text-gray-900 mb-3">
                     Student ID
                   </label>
@@ -585,8 +629,32 @@ export default function AttendancePage() {
                     name="studentId"
                     value={formData.studentId}
                     onChange={handleChange}
-                    className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
+                    onFocus={() => !editingId && setStudentSuggestionsOpen(true)}
+                    className={`w-full h-14 px-5 rounded-full border border-gray-300 focus:outline-none ${
+                      editingId ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : 'bg-white'
+                    }`}
+                    readOnly={!!editingId}
+                    autoComplete="off"
                   />
+                  {!editingId && studentSuggestionsOpen && formData.studentId.trim().length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl">
+                      {studentIdSuggestions.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">No students found</div>
+                      ) : (
+                        studentIdSuggestions.map((student) => (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onMouseDown={() => handleSelectStudentSuggestion(student)}
+                            className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="font-semibold">{student.id}</span>
+                            <span className="text-gray-500 ml-2">{student.name}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -599,7 +667,10 @@ export default function AttendancePage() {
                     name="studentName"
                     value={formData.studentName}
                     onChange={handleChange}
-                    className="w-full h-14 px-5 rounded-full border border-gray-300 bg-white focus:outline-none"
+                    className={`w-full h-14 px-5 rounded-full border border-gray-300 focus:outline-none ${
+                      editingId ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : 'bg-white'
+                    }`}
+                    readOnly={!!editingId}
                   />
                 </div>
 

@@ -29,6 +29,22 @@ export default function CoursesPage() {
     fetchCourses();
   }, []);
 
+  // Function to generate the next course ID
+  const generateNextCourseId = (existingCourses) => {
+    // Find all course IDs that start with 'C' followed by digits
+    const courseIds = existingCourses
+      .map(course => course.id)
+      .filter(id => id && /^C\d+$/.test(id))
+      .map(id => parseInt(id.substring(1)))
+      .filter(num => !isNaN(num));
+
+    // Find the maximum number, or start from 99 if none exist
+    const maxNum = courseIds.length > 0 ? Math.max(...courseIds) : 99;
+    
+    // Return the next ID
+    return `C${maxNum + 1}`;
+  };
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handler = (e) => {
@@ -43,6 +59,14 @@ export default function CoursesPage() {
   const handleSave = async (formData) => {
     try {
       const isEditing = Boolean(editingCourse);
+      let dataToSave = { ...formData };
+
+      // Generate course ID automatically for new courses
+      if (!isEditing) {
+        const nextId = generateNextCourseId(courses);
+        dataToSave.id = nextId;
+      }
+
       const url = isEditing
         ? `${API_BASE}/api/courses/${editingCourse.docId}`
         : `${API_BASE}/api/courses`;
@@ -51,7 +75,7 @@ export default function CoursesPage() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(dataToSave),
       });
 
       if (response.ok) {
